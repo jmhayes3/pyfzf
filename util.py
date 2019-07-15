@@ -25,15 +25,28 @@ def print_matrix(matrix):
 
 
 # TODO: add support for specifying alternate find commands
-def get_files_and_dirs():
-    # recursively get all files and dirs from current working dir
-    process = subprocess.Popen(["find", "."], stdout=subprocess.PIPE)
-    out, err = process.communicate()
+def get_files_and_dirs(include_dirs=False, include_hidden=False):
+    # recursively get all files, ignoring hidden files (-not -path '*/\.*)
+    if include_dirs:
+        if include_hidden:
+            process = subprocess.Popen(["find", "."], stdout=subprocess.PIPE)
+        else:
+            process = subprocess.Popen(["find", ".",  "-not", "-path", "*/\.*"], stdout=subprocess.PIPE)
+    else:
+        if include_hidden:
+            process = subprocess.Popen(["find", ".", "-type", "f"], stdout=subprocess.PIPE)
+        else:
+            process = subprocess.Popen(["find", ".",  "-not", "-path", "*/\.*", "-type", "f"], stdout=subprocess.PIPE)
 
+    out, err = process.communicate()
     out = out.decode("UTF-8").split("\n")
 
-    # dont't include first value which indicates current dir (".")
-    out = out[1:len(out)-1]
+    # remove empty str item from list
+    # remove current dir indicator if output with find (".")
+    if out[0] == ".":
+        out = out[1:-1]
+    else:
+        out = out[0:-1]
 
     lines = []
     for line in out:

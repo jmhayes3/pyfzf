@@ -180,7 +180,7 @@ class Matcher:
                 break
 
         # if all pattern characters aren't found, return None
-        if not p_idx >= (p_length - 1):
+        if p_length >= p_idx + 1:
             return score_matrix, 0, []
         elif backtrack:
             return self.backtrace(chars, pattern, max_score_pos)
@@ -275,7 +275,7 @@ class Tui:
     palette = [
         ('body', 'white', 'black'),
         ('flagged', 'black', 'dark green', ('bold','underline')),
-        ('focus', 'light gray', 'dark blue', 'standout'),
+        ('focus', 'light gray', 'dark blue'),
         ('flagged focus', 'yellow', 'dark cyan',
                 ('bold','standout','underline')),
         ('head', 'yellow', 'black', 'standout'),
@@ -289,21 +289,30 @@ class Tui:
 
     def __init__(self, lines, msg_queue):
         # Frame header
-        self.header_text = urwid.Text('pyfzf')
-        self.header = urwid.AttrMap(self.header_text, 'head')
+        # self.header_text = urwid.Text('pyfzf')
+        # self.header = urwid.AttrMap(self.header_text, 'head')
 
         # Frame body
         self.walker = urwid.SimpleFocusListWalker([])
+
+        for line in lines:
+            self.walker.append(urwid.Text(line))
+
         self.body = urwid.ListBox(self.walker)
 
         # Frame footer
+        self.initial_length = str(len(lines))
+        self.status_line = urwid.Text(("foot", self.initial_length + "/" + self.initial_length))
         self.prompt = urwid.Edit(("> "))
+        self.footer = urwid.Pile([self.status_line, self.prompt])
 
         # assemble Frame
-        self.layout = urwid.Frame(header=self.header, body=self.body, footer=self.prompt, focus_part="footer")
+        self.layout = urwid.Frame(body=self.body, footer=self.footer, focus_part="footer")
+
+        self.screen = urwid.raw_display.Screen()
 
         self.loop = urwid.MainLoop(self.layout, self.palette,
-            unhandled_input=self._unhandled_input)
+            unhandled_input=self._unhandled_input, screen=self.screen)
 
         urwid.connect_signal(self.prompt, 'change', self._on_prompt_change)
 
@@ -324,8 +333,8 @@ class Tui:
         for index, score, match_positions in scored_lines:
             line = self.lines[index]
             if score > 0:
-                self.walker.append(urwid.Text(('body', line)))
-                self.body.set_focus(len(self.walker) - 1, 'above')
+                self.walker.append(urwid.Text(line))
+                # self.body.set_focus(len(self.walker) - 1, 'above')
 
     def _check_queue(self, loop, *args):
         pass
