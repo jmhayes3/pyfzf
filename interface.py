@@ -49,6 +49,7 @@ class Interface:
         self.screen = urwid.raw_display.Screen()
         self.loop = urwid.MainLoop(self.layout, self.palette,
             unhandled_input=self._unhandled_input, screen=self.screen)
+
         urwid.connect_signal(self.prompt, 'change', self._on_prompt_change)
 
         self._update_list(self.lines)
@@ -77,6 +78,7 @@ class Interface:
 
     def _on_prompt_change(self, prompt, new_pattern):
         self.list_walker.clear()
+        self.loop.draw_screen()
 
         # display all lines if prompt is empty
         if new_pattern == "":
