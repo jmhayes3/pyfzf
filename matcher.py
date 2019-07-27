@@ -18,7 +18,7 @@ NON_ALNUM = 4
 
 class Matcher:
 
-    def __init__(self, lines):
+    def __init__(self, lines=[]):
         self.lines = lines
 
 
@@ -199,9 +199,10 @@ class Matcher:
             return max_score
 
 
-    def compute_scores(self, pattern, sort=True):
+    def compute_scores(self, pattern, lines, sort=True):
         processed = []
-        for line in self.lines:
+        lines = lines.split("\n")
+        for line in lines:
             line = line.rstrip("\n")
             score, match_positions = self.fuzzymatch_v1(line, pattern)
             processed.append((line, score, match_positions))
@@ -211,4 +212,14 @@ class Matcher:
             return sorted(processed, key=lambda x: (x[1], len(x[0])), reverse=False)
 
         return processed
+
+
+if __name__ == "__main__":
+    import sys
+    import os
+
+    matcher = Matcher()
+    scored_lines = matcher.compute_scores(sys.argv[1], sys.argv[2])
+    for line, score, match_positions in scored_lines:
+        print("LINE:", line, "SCORE:", score, "MATCHES:", match_positions)
 

@@ -39,6 +39,7 @@ def get_files_and_dirs(include_dirs=False, include_hidden=False, pipe=subprocess
         else:
             process = subprocess.Popen(["find", ".",  "-not", "-path", "*/\.*", "-type", "f"], stdout=pipe)
 
+    # communicate method is blocking
     out, err = process.communicate()
     out = out.decode("UTF-8").split("\n")
 
@@ -62,7 +63,7 @@ def get_lines(**kwargs):
     If stdin is from a pipe or file redirection, process input.
     Otherwise, spawn subprocess to get a file/dir listing.
 
-    Return list of lines given some delimiter. (only "\n" supported for now)
+    Return list of lines given some delimiter. (only NEWLINE supported for now)
     """
 
     mode = os.fstat(sys.stdin.fileno()).st_mode
@@ -79,13 +80,15 @@ def get_lines(**kwargs):
 def main():
     # parser = get_parser()
     # args = vars(parser.parse_args())
+    # lines = get_lines()
 
-    lines = get_lines()
-    matcher = Matcher(lines)
-    tui = Interface(matcher, lines=lines)
-    tui.loop.run()
+    matcher = Matcher()
+    tui = Interface(matcher)
+
+    tui.run()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    logging.basicConfig(filename="debug.log", level=logging.DEBUG)
     main()
 
