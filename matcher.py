@@ -217,5 +217,5 @@ if __name__ == "__main__":
     matcher = Matcher()
     scored_lines = matcher.compute_scores(sys.argv[1], sys.argv[2])
     for line, score, match_positions in scored_lines:
-        print("LINE:", line, "SCORE:", score, "MATCHES:", match_positions)
+        print("LINE: {0}; SCORE: {1}; MATCHES: {2};".format(line, str(score), match_positions))
 

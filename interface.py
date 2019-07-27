@@ -51,12 +51,19 @@ class Interface:
         )
 
         self.screen = urwid.raw_display.Screen()
-        self.loop = urwid.MainLoop(self.layout, self.palette,
-            unhandled_input=self._unhandled_input, screen=self.screen)
+
+        self.loop = urwid.MainLoop(
+            self.layout,
+            self.palette,
+            unhandled_input=self._unhandled_input,
+            screen=self.screen
+        )
 
         urwid.connect_signal(self.prompt, 'change', self._prompt_handler)
 
         self.prev = ""
+
+        self.current_pattern = ""
 
 
     def run(self):
@@ -86,6 +93,10 @@ class Interface:
         self.lines.append(line)
 
 
+    def _append_list(self, line):
+        self.list_walker.append(urwid.Text(line))
+
+
     # TODO: add optional arg that accepts a list of match positions to colorize
     def _extend_list(self, lines):
         for line in lines:
@@ -106,8 +117,9 @@ class Interface:
         return lines
 
 
+    # TODO: handle case where pattern length is reduced (last used pattern)
     def _prompt_handler(self, prompt, new_pattern):
-        # self.list_walker.clear()
+        self.current_pattern = new_pattern
 
         # display all lines if prompt is empty
         if new_pattern == "":
@@ -117,15 +129,7 @@ class Interface:
         else:
             current_lines = self._extract_text()
             self.spawn_matcher(new_pattern, current_lines)
-            # matches = 0
-            # scored_lines = self.matcher.compute_scores(new_pattern)
-            # for line, score, match_positions in scored_lines:
-            #     if score > 0:
-            #         self.list_walker.append(urwid.Text(line))
-            #         matches += 1
-            #         # self.body.set_focus(len(self.list_walker) - 1, 'above')
-
-            # self._update_status_line(matches, len(self.lines))
+            self.list_walker.clear()
 
 
     # TODO: run as thread instead of subprocess?
@@ -144,13 +148,8 @@ class Interface:
     def new_line_handler(self, data):
         out = data.decode("UTF-8").split("\n")
 
-        # TODO: avoid this by using appropriate params when spawning subprocess
-        # remove empty str item from list
-        # remove current dir indicator (".") if it is present
-        if out[0] == ".":
-            out = out[1:-1]
-        else:
-            out = out[0:-1]
+        # don't include last item in list as it is empty
+        out = out[0:-1]
 
         for line in out:
             line = line.replace("./", "", 1)
@@ -167,7 +166,7 @@ class Interface:
 
         logging.debug("NUM OF LINES: " + str(len(data)))
 
-        pattern = "LINE: .+ SCORE: .+ MATCHES: \[.?\]"
+        pattern = "LINE: .+; SCORE: .+; MATCHES: \[.*\];"
         regex = re.compile("({})".format(pattern), re.DOTALL)
 
         logging.debug("Start loop.")
@@ -177,11 +176,41 @@ class Interface:
             match = regex.match(self.prev + chunk)
             if match:
                 logging.debug("MATCH: " + match.group(0))
+                new_match = match.group(0)
+                self.process_new_match(new_match)
             else:
                 logging.debug("NO MATCH.")
                 self.prev = chunk
 
+
+
         logging.debug("End loop.")
         logging.debug("--End of function--")
+
+
+    def process_new_match(self, match):
+        # print(match)
+        match = match.split(";")[0:-1]
+        line = match[0].strip("LINE: ")
+        score = match[1].strip("SCORE: ")
+        matches = match[2].strip(" MATCHES: []")
+        # print(line)
+        # print(score)
+
+        match_pos = []
+        if len(matches) > 0:
+            m_pos = matches.split(",")
+            for i in m_pos:
+                pos = int(i)
+                match_pos.append(pos)
+
+        # print(match_pos)
+
+        if isinstance(score, str):
+            score = float(score)
+
+        if score > 0:
+            self._append_list(line)
+            self._update_status_line(len(self.list_walker), len(self.lines))
 
 
