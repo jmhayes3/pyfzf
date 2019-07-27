@@ -18,10 +18,6 @@ NON_ALNUM = 4
 
 class Matcher:
 
-    def __init__(self, lines=[]):
-        self.lines = lines
-
-
     # charClassOf implementation
     def get_char_type(self, char):
         if char.isalnum():

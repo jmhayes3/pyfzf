@@ -25,14 +25,12 @@ class Interface:
     ]
 
 
-    def __init__(self, matcher, lines=[]):
+    def __init__(self):
         # Frame header
         # self.header_text = urwid.Text('pyfzf')
         # self.header = urwid.AttrMap(self.header_text, 'head')
 
-        self.lines = lines
-
-        self.matcher = matcher
+        self.lines = []
 
         self.list_walker = urwid.SimpleFocusListWalker([])
 
@@ -79,15 +77,6 @@ class Interface:
         return self.loop.watch_pipe(handler)
 
 
-    def get_pipe(self, handler):
-        if handler == "new_line_handler":
-            return self.loop.watch_pipe(self.new_line_handler)
-        elif handler == "new_match_handler":
-            return self.loop.watch_pipe(self.new_match_handler)
-        else:
-            raise ValueError
-
-
     def _unhandled_input(self, k):
         if k in ('q','Q'):
             raise urwid.ExitMainLoop()
@@ -98,7 +87,7 @@ class Interface:
 
 
     # TODO: add optional arg that accepts a list of match positions to colorize
-    def _update_list(self, lines):
+    def _extend_list(self, lines):
         for line in lines:
             self.list_walker.append(urwid.Text(line))
 
@@ -123,7 +112,7 @@ class Interface:
         # display all lines if prompt is empty
         if new_pattern == "":
             self.list_walker.clear()
-            self._update_list(self.lines)
+            self._extend_list(self.lines)
             self._update_status_line(len(self.lines), len(self.lines))
         else:
             current_lines = self._extract_text()
@@ -140,9 +129,10 @@ class Interface:
 
 
     # TODO: run as thread instead of subprocess?
+    # won't work on large inputs due to limitation on num of args
     def spawn_matcher(self, pattern, lines):
         lines = "\n".join(lines)
-        pipe = self.get_pipe("new_match_handler")
+        pipe = self._get_pipe(self.new_match_handler)
         path_to_exec = os.path.join(os.path.dirname(sys.argv[0]), "matcher.py")
         process = subprocess.Popen(
             ["python", "-u", path_to_exec, str(pattern), lines],
@@ -172,9 +162,10 @@ class Interface:
 
     def new_match_handler(self, data):
         logging.debug("--Beginning of function--")
-        logging.debug("NUM OF LINES: " + str(len(data)))
 
         data = data.decode("UTF-8").split("\n")
+
+        logging.debug("NUM OF LINES: " + str(len(data)))
 
         pattern = "LINE: .+ SCORE: .+ MATCHES: \[.?\]"
         regex = re.compile("({})".format(pattern), re.DOTALL)

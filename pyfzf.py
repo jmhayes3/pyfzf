@@ -58,6 +58,7 @@ def get_files_and_dirs(include_dirs=False, include_hidden=False, pipe=subprocess
     return lines
 
 
+# TODO: use fileinput methods to iterate over stdin?
 def get_lines(**kwargs):
     """
     If stdin is from a pipe or file redirection, process input.
@@ -82,9 +83,7 @@ def main():
     # args = vars(parser.parse_args())
     # lines = get_lines()
 
-    matcher = Matcher()
-    tui = Interface(matcher)
-
+    tui = Interface()
     tui.run()
 
 
