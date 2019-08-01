@@ -3,8 +3,11 @@ import sys
 import subprocess
 import re
 import logging
+import concurrent.futures
 
 import urwid
+
+from matcher import compute_scores
 
 
 class Interface:
@@ -59,7 +62,7 @@ class Interface:
             screen=self.screen
         )
 
-        urwid.connect_signal(self.prompt, 'change', self._prompt_handler)
+        urwid.connect_signal(self.prompt, "change", self._prompt_handler)
 
         self.prev = ""
 
@@ -119,22 +122,32 @@ class Interface:
 
     # TODO: handle case where pattern length is reduced (last used pattern)
     def _prompt_handler(self, prompt, new_pattern):
-        self.current_pattern = new_pattern
-
         # display all lines if prompt is empty
         if new_pattern == "":
             self.list_walker.clear()
             self._extend_list(self.lines)
             self._update_status_line(len(self.lines), len(self.lines))
+        elif len(new_pattern) < len(self.current_pattern):
+            current_lines = self.lines
+            pipe = self._get_pipe(self.new_match_handler)
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                result = executor.submit(compute_scores, new_pattern, current_lines, fd=pipe)
+            self.list_walker.clear()
         else:
             current_lines = self._extract_text()
-            self.spawn_matcher(new_pattern, current_lines)
+            pipe = self._get_pipe(self.new_match_handler)
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                # result = executor.submit(compute_scores, new_pattern, current_lines)
+                result = executor.submit(compute_scores, new_pattern, current_lines, fd=pipe)
+            # self.spawn_matcher_as_subprocess(new_pattern, current_lines)
             self.list_walker.clear()
+
+        self.current_pattern = new_pattern
 
 
     # TODO: run as thread instead of subprocess?
     # won't work on large inputs due to limitation on num of args
-    def spawn_matcher(self, pattern, lines):
+    def spawn_matcher_as_subprocess(self, pattern, lines):
         lines = "\n".join(lines)
         pipe = self._get_pipe(self.new_match_handler)
         path_to_exec = os.path.join(os.path.dirname(sys.argv[0]), "matcher.py")
@@ -143,6 +156,10 @@ class Interface:
             stdout=pipe,
             close_fds=True
         )
+
+
+    def spawn_matcher_as_thread(self, pattern, lines):
+        pipe = self._get_pipe(self.new_match_handler)
 
 
     def new_line_handler(self, data):
@@ -182,8 +199,6 @@ class Interface:
                 logging.debug("NO MATCH.")
                 self.prev = chunk
 
-
-
         logging.debug("End loop.")
         logging.debug("--End of function--")
 
@@ -212,5 +227,4 @@ class Interface:
         if score > 0:
             self._append_list(line)
             self._update_status_line(len(self.list_walker), len(self.lines))
-
 

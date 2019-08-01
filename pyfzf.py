@@ -15,7 +15,7 @@ import subprocess
 import urwid
 
 from interface import Interface
-from matcher import Matcher
+from matcher import compute_scores
 
 
 def get_parser():
