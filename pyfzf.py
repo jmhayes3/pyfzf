@@ -13,6 +13,7 @@ import threading
 import time
 import subprocess
 import urwid
+import cProfile
 
 from interface import Interface
 from matcher import compute_scores
@@ -89,5 +90,5 @@ def main():
 
 if __name__ == "__main__":
     logging.basicConfig(filename="debug.log", level=logging.DEBUG)
-    main()
+    cProfile.run('main()')
 

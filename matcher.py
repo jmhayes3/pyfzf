@@ -190,7 +190,7 @@ def backtrace(chars, pattern, start_pos):
 def fuzzymatch_v1(chars, pattern, case=True, normalize=True, with_pos=True):
     score_matrix, max_score, match_positions = get_score(chars, pattern)
     if with_pos:
-        return max_score, match_positions
+        return chars, max_score, match_positions
     else:
         return max_score
 
@@ -213,7 +213,7 @@ def compute_scores(pattern, lines, sort=True, fd=None):
                 data = "LINE: {0}; SCORE: {1}; MATCHES: {2};\n".format(line, str(score), match_positions)
                 os.write(fd, bytes(data, encoding="UTF-8"))
         except Exception as e:
-            print("FUCK", e)
+            print(e)
     else:
         return processed
 

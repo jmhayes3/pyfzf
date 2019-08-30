@@ -7,7 +7,7 @@ import concurrent.futures
 
 import urwid
 
-from matcher import compute_scores
+from matcher import compute_scores, fuzzymatch_v1
 
 
 class Interface:
@@ -129,20 +129,42 @@ class Interface:
             self._update_status_line(len(self.lines), len(self.lines))
         elif len(new_pattern) < len(self.current_pattern):
             current_lines = self.lines
-            pipe = self._get_pipe(self.new_match_handler)
-            with concurrent.futures.ProcessPoolExecutor() as executor:
-                result = executor.submit(compute_scores, new_pattern, current_lines, fd=pipe)
             self.list_walker.clear()
+            # pipe = self._get_pipe(self.new_match_handler)
+            it = [(line, new_pattern) for line in current_lines]
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                # result = executor.submit(compute_scores, new_pattern, current_lines, fd=pipe)
+                futures = {executor.submit(fuzzymatch_v1, line, new_pattern): line for line in current_lines}
+                for future in concurrent.futures.as_completed(futures):
+                    f = futures[future]
+                    try:
+                        data = future.result()
+                        self.process_line(data)
+                    except Exception as e:
+                        print("{} generated an exception: {}".format(f, e))
         else:
             current_lines = self._extract_text()
-            pipe = self._get_pipe(self.new_match_handler)
-            with concurrent.futures.ProcessPoolExecutor() as executor:
-                # result = executor.submit(compute_scores, new_pattern, current_lines)
-                result = executor.submit(compute_scores, new_pattern, current_lines, fd=pipe)
-            # self.spawn_matcher_as_subprocess(new_pattern, current_lines)
             self.list_walker.clear()
+            # pipe = self._get_pipe(self.new_match_handler)
+            it = [(line, new_pattern) for line in current_lines]
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                # result = executor.submit(compute_scores, new_pattern, current_lines, fd=pipe)
+                futures = {executor.submit(fuzzymatch_v1, line, new_pattern): line for line in current_lines}
+                for future in concurrent.futures.as_completed(futures):
+                    f = futures[future]
+                    try:
+                        data = future.result()
+                        self.process_line(data)
+                    except Exception as e:
+                        print("{} generated an exception: {}".format(f, e))
 
         self.current_pattern = new_pattern
+
+
+    def process_line(self, data):
+        if data[1] > 0:
+            self._append_list(data[0])
+            self._update_status_line(len(self.list_walker), len(self.lines))
 
 
     # TODO: run as thread instead of subprocess?
