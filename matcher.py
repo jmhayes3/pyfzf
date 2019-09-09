@@ -1,5 +1,3 @@
-import os
-
 from util import initialize_matrix
 
 
@@ -116,12 +114,12 @@ def get_score(chars, pattern, backtrack=True):
     if p_length >= p_idx + 1:
         return score_matrix, 0, []
     elif backtrack:
-        return backtrace(chars, pattern, max_score_pos)
+        return backtracker(chars, pattern, max_score_pos)
     else:
         return score_matrix, max_score, match_positions
 
 
-def backtrace(chars, pattern, start_pos):
+def backtracker(chars, pattern, start_pos):
     c_length = len(chars)
     p_length = len(pattern)
 
@@ -187,42 +185,21 @@ def backtrace(chars, pattern, start_pos):
 # fuzzy_match makes two assumptions
 # 1. "pattern" is given in lowercase if "case_sensitive" is false
 # 2. "pattern" is already normalized if "normalize" is true
-def fuzzymatch_v1(chars, pattern, case=True, normalize=True, with_pos=True):
+def fuzzymatch_v1(chars, pattern, case=True, normalize=True, with_pos=True, debug=False):
     score_matrix, max_score, match_positions = get_score(chars, pattern)
-    if with_pos:
-        return chars, max_score, match_positions
+
+    if debug:
+        return score_matrix, max_score, match_positions
+    elif with_pos:
+        return max_score, match_positions
     else:
         return max_score
 
 
-def compute_scores(pattern, lines, sort=True, fd=None):
+def compute_scores(pattern, lines):
     processed = []
-    # lines = lines.split("\n")
     for line in lines:
-        line = line.rstrip("\n")
         score, match_positions = fuzzymatch_v1(line, pattern)
         processed.append((line, score, match_positions))
-
-    if sort:
-        # sort lines in ascending order by score and line length
-        processed = sorted(processed, key=lambda x: (x[1], len(x[0])), reverse=False)
-
-    if fd:
-        try:
-            for line, score, match_positions in processed:
-                data = "LINE: {0}; SCORE: {1}; MATCHES: {2};\n".format(line, str(score), match_positions)
-                os.write(fd, bytes(data, encoding="UTF-8"))
-        except Exception as e:
-            print(e)
-    else:
-        return processed
-
-
-if __name__ == "__main__":
-    import sys
-    import os
-
-    scored_lines = compute_scores(sys.argv[1], sys.argv[2])
-    for line, score, match_positions in scored_lines:
-        print("LINE: {0}; SCORE: {1}; MATCHES: {2};".format(line, str(score), match_positions))
+    return processed
 
