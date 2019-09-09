@@ -191,7 +191,7 @@ def fuzzymatch_v1(chars, pattern, case=True, normalize=True, with_pos=True, debu
     if debug:
         return score_matrix, max_score, match_positions
     elif with_pos:
-        return max_score, match_positions
+        return chars, max_score, match_positions
     else:
         return max_score
 

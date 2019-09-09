@@ -9,18 +9,23 @@ import signal
 import re
 import os
 import subprocess
+import concurrent.futures
 
-from matcher import compute_scores, fuzzymatch_v1
+from matcher import fuzzymatch_v1
 
-# TODO: add supoort for python 2.7
-if (sys.version_info < (3, 0)):
-    exit('Sorry, you need Python 3 to run this!')
+
+if (sys.version_info < (3, 4)):
+    # uses Asyncio (Python 3.4) event loop for better performance
+    exit('pyfzf requires Python 3.4 or higher.')
 
 palette = [
     ('head', '', '', '', '#000', '#618'),
     ('body', '', '', '', '#ddd', '#000'),
+    ('foot', '', '', '', '#000', '#618'),
     ('focus', '', '', '', '#000', '#da0'),
     ('input', '', '', '', '#fff', '#618'),
+    ('prompt', '', '', '', '#000', '#618'),
+    ('prompt_focus', '', '', '', '#000', '#618'),
     ('empty_list', '', '', '', '#ddd', '#b00'),
     ('pattern', '', '', '', '#f91', ''),
     ('pattern_focus', '', '', '', 'bold,#a00', '#da0'),
@@ -31,67 +36,34 @@ palette = [
 signal.signal(signal.SIGINT, lambda *_: sys.exit(0))  # die with style
 
 
-class ItemWidget(urwid.WidgetWrap):
+class LineItemWidget(urwid.WidgetWrap):
+    def __init__(self, line, match_indices=None):
+        self.line = line
+
+        # highlight chars where a match is found
+        if match_indices:
+            parts = []
+            for char_index, char in enumerate(line):
+                if char_index in match_indices:
+                    parts.append(('pattern', char))
+                else:
+                    parts.append(char)
+
+            text = urwid.AttrMap(
+                urwid.Text(parts),
+                'line',
+                {'pattern': 'pattern_focus', None: 'line_focus'}
+            )
+        else:
+            text = urwid.AttrMap(urwid.Text(self.line), 'line', 'line_focus')
+
+        super().__init__(text)
+
     def selectable(self):
         return True
 
     def keypress(self, size, key):
         return key
-
-
-class ItemWidgetPlain(ItemWidget):
-    def __init__(self, line):
-        self.line = line
-        text = urwid.AttrMap(urwid.Text(self.line), 'line', 'line_focus')
-        super().__init__(text)
-
-
-# TODO: highlight char where char index is equal to match index
-class ItemWidgetPattern(ItemWidget):
-    def __init__(self, line, match_indices=None):
-        self.line = line
-
-        # highlight chars where a match is found
-        parts = []
-        for char_index, char in enumerate(line):
-            if char_index in match_indices:
-                parts.append(('pattern', char))
-            else:
-                parts.append(char)
-
-        text = urwid.AttrMap(
-            urwid.Text(parts),
-            'line',
-            {'pattern': 'pattern_focus', None: 'line_focus'}
-        )
-
-        super().__init__(text)
-
-
-class ItemWidgetWords(ItemWidget):
-    def __init__(self, line, search_words):
-        self.line = line
-
-        subject = line
-        parts = []
-        for search_word in search_words:
-            if search_word:
-                split = subject.split(search_word, maxsplit=1)
-                subject = split[-1]
-                parts += [split[0], ('pattern', search_word)]
-
-        try:
-            parts += split[1]
-        except IndexError:
-            pass
-
-        text = urwid.AttrMap(
-            urwid.Text(parts),
-            'line',
-            {'pattern': 'pattern_focus', None: 'line_focus'}
-        )
-
-        super().__init__(text)
 
 
 class SearchEdit(urwid.Edit):
@@ -109,26 +81,14 @@ class SearchEdit(urwid.Edit):
             urwid.emit_signal(self, 'toggle_case_modifier')
             urwid.emit_signal(self, 'change', self, self.get_edit_text())
             return
+        elif key == 'up':
+            urwid.emit_signal(self, 'done', None)
+            return
         elif key == 'down':
             urwid.emit_signal(self, 'done', None)
             return
 
         urwid.Edit.keypress(self, size, key)
-
-
-class ResultList(urwid.ListBox):
-    __metaclass__ = urwid.signals.MetaSignals
-    signals = ['resize']
-
-    def __init__(self, *args):
-        self.last_size = None
-        urwid.ListBox.__init__(self, *args)
-
-    def render(self, size, focus):
-        if size != self.last_size:
-            self.last_size = size
-            urwid.emit_signal(self, 'resize', size)
-        return urwid.ListBox.render(self, size, focus)
 
 
 class LineCountWidget(urwid.Text):
@@ -147,7 +107,7 @@ class LineCountWidget(urwid.Text):
 
 
 class Selector(object):
-    def __init__(self, revert_order, case_sensitive, remove_duplicates, show_matches, infile):
+    def __init__(self, case_sensitive, remove_duplicates, show_matches, infile):
 
         self.show_matches = show_matches
         self.case_modifier = case_sensitive
@@ -157,45 +117,61 @@ class Selector(object):
         self.line_widgets = []
 
         self.line_count_display = LineCountWidget('')
-        self.search_edit = SearchEdit(edit_text='')
-
         self.modifier_display = urwid.Text('')
+        self.search_edit = SearchEdit(edit_text='')
 
         urwid.connect_signal(self.search_edit, 'done', self.edit_done)
         urwid.connect_signal(self.search_edit, 'toggle_case_modifier', self.toggle_case_modifier)
         urwid.connect_signal(self.search_edit, 'change', self.edit_change)
 
-        header = urwid.AttrMap(urwid.Columns([
-            urwid.AttrMap(self.search_edit, 'input', 'input'),
-            self.modifier_display,
-            ('pack', self.line_count_display),
-        ], dividechars=1, focus_column=0), 'head', 'head')
+        self.status_line = urwid.AttrMap(
+            urwid.Columns(
+                [('pack', self.line_count_display),
+                    self.modifier_display,
+                ], dividechars=1),
+            'line',
+            'line_focus'
+        )
+
+        footer = urwid.Pile([
+            self.status_line,
+            urwid.AttrMap(self.search_edit, 'line_focus', 'line_focus'),
+        ])
 
         self.item_list = urwid.SimpleListWalker(self.line_widgets)
-        self.listbox = ResultList(self.item_list)
+        self.listbox = urwid.ListBox(self.item_list)
 
-        urwid.connect_signal(self.listbox, 'resize', self.list_resize)
+        self.view = urwid.Frame(body=self.listbox, footer=footer)
 
-        self.view = urwid.Frame(body=self.listbox, header=header)
-
-        self.loop = urwid.MainLoop(self.view, palette, event_loop=urwid.AsyncioEventLoop(), unhandled_input=self.on_unhandled_input)
+        self.loop = urwid.MainLoop(self.view, palette,
+                event_loop=urwid.AsyncioEventLoop(),
+                unhandled_input=self.on_unhandled_input)
         self.loop.screen.set_terminal_properties(colors=256)
 
         self.line_count_display.update(len(self.item_list), len(self.item_list))
 
-        # TODO workaround, when update_list is called directly, the linecount widget gets not updated
+        # TODO workaround, when update_list is called directly,
+        # the linecount widget gets not updated
         self.loop.set_alarm_in(0.01, lambda *loop: self.update_list(''))
 
         if infile.name == '<stdin>':
-            # pipe = self.loop.watch_pipe(self.update_lines)
-            pipe = subprocess.PIPE
+            # non-blocking
+            pipe = self.loop.watch_pipe(self.update_lines)
             process = subprocess.Popen(
                 ["find", ".",  "-not", "-path", "*/\.*", "-type", "f"],
                 stdout=pipe,
                 stderr=subprocess.DEVNULL
             )
-            stdout, stderr = process.communicate()
-            self.update_lines(stdout)
+
+            # blocking
+            # pipe = subprocess.PIPE
+            # process = subprocess.Popen(
+            #     ["find", ".",  "-not", "-path", "*/\.*", "-type", "f"],
+            #     stdout=pipe,
+            #     stderr=subprocess.DEVNULL
+            # )
+            # stdout, stderr = process.communicate()
+            # self.update_lines(stdout)
 
         self.loop.run()
 
@@ -218,10 +194,16 @@ class Selector(object):
             self.modifier_display.set_text('')
 
     def update_lines(self, data):
-        lines = data.decode("UTF-8").split("\n")
-        # last line is empty, remove it
-        lines = lines[0:-1]
+        try:
+            lines = data.decode("UTF-8").split("\n")
+        except AttributeError:
+            pass
+
+        # last line is whitespace, remove it
+        last = lines.pop()
+
         for line in lines:
+            # TODO: do this instead with 'find' parameters
             # remove directory indicator prefix if it exists
             if line[0:2] == "./":
                 line = line.replace("./", "", 1)
@@ -229,33 +211,41 @@ class Selector(object):
             if line not in self.lines:
                 self.lines.append(line)
 
-        self.item_list[:] = [ItemWidgetPlain(item) for item in self.lines]
+        items = [LineItemWidget(item) for item in self.lines]
+
+        self.item_list[:] = items
         self.line_count_display.update(total_lines=len(self.item_list))
 
     def update_list(self, search_text):
         if search_text == '' or search_text == '"' or search_text == '""':  # show all lines
-            self.item_list[:] = [ItemWidgetPlain(item) for item in self.lines]
+            self.item_list[:] = [LineItemWidget(item) for item in self.lines]
             self.line_count_display.update(len(self.item_list))
         else:
-            # get scores
-            # sort by score
-            # sort lines in ascending order by score and line length
-            # sorted_by_score = sorted(processed, key=lambda x: (x[1], len(x[0])), reverse=False)
+            # scored_lines = []
+            # for line in self.lines:
+            #     score, match_positions = fuzzymatch_v1(line, search_text)
+            #     scored_lines.append((line, score, match_positions))
 
             scored_lines = []
-            for index, line in enumerate(self.lines):
-                score, match_positions = fuzzymatch_v1(line, search_text)
-                scored_lines.append((index, line, score, match_positions))
+            with concurrent.futures.ProcessPoolExecutor() as executor:
+                futures = {executor.submit(fuzzymatch_v1, line, search_text): line for line in self.lines}
+                for future in concurrent.futures.as_completed(futures):
+                    f = futures[future]
+                    try:
+                        line, score, match_positions = future.result()
+                        scored_lines.append((line, score, match_positions))
+                    except Exception as e:
+                        pass
 
-            lines_sorted_by_score = sorted(scored_lines, key=lambda x: (x[2], len(x[1])), reverse=True)
+            lines_sorted_by_score = sorted(scored_lines, key=lambda x: (x[1], len(x[0])), reverse=True)
 
             items = []
             for item in lines_sorted_by_score:
-                if item[2] > 0:
+                if item[1] > 0:
                     if self.show_matches:
-                        items.append(ItemWidgetPattern(item[1], match_indices=item[3]))
+                        items.append(LineItemWidget(item[0], match_indices=item[2]))
                     else:
-                        items.append(ItemWidgetPlain(item[1]))
+                        items.append(LineItemWidget(item[0]))
 
             if len(items) > 0:
                 self.item_list[:] = items
@@ -265,7 +255,7 @@ class Selector(object):
                 self.line_count_display.update(relevant_lines=0)
 
         try:
-            self.item_list.set_focus(0)
+            self.item_list.set_focus(len(self.item_list)-1)
         except IndexError:  # no items
             pass
 
@@ -285,8 +275,8 @@ class Selector(object):
             except AttributeError:  # empty list
                 return
 
-            self.view.set_header(urwid.AttrMap(
-                urwid.Text('selected: {}'.format(line)), 'head'))
+            self.view.set_footer(urwid.AttrMap(
+                urwid.Text('selected: {}'.format(line)), 'foot'))
 
             self.inject_command(line)
             raise urwid.ExitMainLoop()
@@ -297,7 +287,7 @@ class Selector(object):
         elif input_ == 'backspace':
             self.search_edit.set_edit_text(self.search_edit.get_text()[0][:-1])
             self.search_edit.set_edit_pos(len(self.search_edit.get_text()[0]))
-            self.view.set_focus('header')
+            self.view.set_focus('footer')
 
         elif input_ == 'esc':
             raise urwid.ExitMainLoop()
@@ -305,7 +295,7 @@ class Selector(object):
         elif len(input_) == 1:  # ignore things like tab, enter
             self.search_edit.set_edit_text(self.search_edit.get_text()[0] + input_)
             self.search_edit.set_edit_pos(len(self.search_edit.get_text()[0]))
-            self.view.set_focus('header')
+            self.view.set_focus('footer')
 
         return True
 
@@ -325,7 +315,6 @@ class Selector(object):
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--revert-order', action='store_true', default=False, help='revert the order of the lines')
     parser.add_argument('-a', '--case-sensitive', action='store_true', default=True, help='start in case-sensitive mode')
     parser.add_argument('-d', '--remove-duplicates', action='store_true', default=True, help='remove duplicated lines')
     parser.add_argument('-y', '--show-matches', action='store_true', default=True, help='highlight the part of each line where there is a match')
@@ -334,7 +323,6 @@ def main():
     args = parser.parse_args()
 
     Selector(
-        revert_order=args.revert_order,
         case_sensitive=args.case_sensitive,
         remove_duplicates=args.remove_duplicates,
         show_matches=args.show_matches,
