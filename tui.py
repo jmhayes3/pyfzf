@@ -9,13 +9,11 @@ import signal
 import re
 import os
 import subprocess
-import concurrent.futures
 
 from matcher import fuzzymatch_v1
 
 
 if (sys.version_info < (3, 4)):
-    # uses Asyncio (Python 3.4) event loop for better performance
     exit('pyfzf requires Python 3.4 or higher.')
 
 palette = [
@@ -107,10 +105,12 @@ class LineCountWidget(urwid.Text):
 
 
 class Selector(object):
-    def __init__(self, case_sensitive, remove_duplicates, show_matches, infile):
+    def __init__(self, algo, case_sensitive, show_matches, infile):
 
+        self.algo = algo
         self.show_matches = show_matches
         self.case_modifier = case_sensitive
+        self.infile = infile
 
         self.lines = []
 
@@ -154,30 +154,29 @@ class Selector(object):
         # the linecount widget gets not updated
         self.loop.set_alarm_in(0.01, lambda *loop: self.update_list(''))
 
-        if infile.name == '<stdin>':
-            # non-blocking
-            pipe = self.loop.watch_pipe(self.update_lines)
-            process = subprocess.Popen(
-                ["find", ".",  "-not", "-path", "*/\.*", "-type", "f"],
-                stdout=pipe,
-                stderr=subprocess.DEVNULL
-            )
+    def run(self):
+        """Start main loop."""
 
-            # blocking
-            # pipe = subprocess.PIPE
+        if self.infile.name == '<stdin>':
+            # non-blocking but slower
+            # pipe = self.loop.watch_pipe(self.update_lines)
             # process = subprocess.Popen(
             #     ["find", ".",  "-not", "-path", "*/\.*", "-type", "f"],
             #     stdout=pipe,
             #     stderr=subprocess.DEVNULL
             # )
-            # stdout, stderr = process.communicate()
-            # self.update_lines(stdout)
+
+            # blocking but faster
+            pipe = subprocess.PIPE
+            process = subprocess.Popen(
+                ["find", ".",  "-not", "-path", "*/\.*", "-type", "f"],
+                stdout=pipe,
+                stderr=subprocess.DEVNULL
+            )
+            stdout, stderr = process.communicate()
+            self.update_lines(stdout)
 
         self.loop.run()
-
-    def list_resize(self, size):
-        # self.line_count_display.update(relevant_lines=size[1])
-        pass
 
     def toggle_case_modifier(self):
         self.case_modifier = not self.case_modifier
@@ -221,26 +220,15 @@ class Selector(object):
             self.item_list[:] = [LineItemWidget(item) for item in self.lines]
             self.line_count_display.update(len(self.item_list))
         else:
-            # scored_lines = []
-            # for line in self.lines:
-            #     score, match_positions = fuzzymatch_v1(line, search_text)
-            #     scored_lines.append((line, score, match_positions))
-
             scored_lines = []
-            with concurrent.futures.ProcessPoolExecutor() as executor:
-                futures = {executor.submit(fuzzymatch_v1, line, search_text): line for line in self.lines}
-                for future in concurrent.futures.as_completed(futures):
-                    f = futures[future]
-                    try:
-                        line, score, match_positions = future.result()
-                        scored_lines.append((line, score, match_positions))
-                    except Exception as e:
-                        pass
+            for line in self.lines:
+                score, match_positions = fuzzymatch_v1(line, search_text)
+                scored_lines.append((line, score, match_positions))
 
-            lines_sorted_by_score = sorted(scored_lines, key=lambda x: (x[1], len(x[0])), reverse=True)
+            sorted_lines = sorted(scored_lines, key=lambda x: (x[1], len(x[0])), reverse=True)
 
             items = []
-            for item in lines_sorted_by_score:
+            for item in sorted_lines:
                 if item[1] > 0:
                     if self.show_matches:
                         items.append(LineItemWidget(item[0], match_indices=item[2]))
@@ -310,27 +298,4 @@ class Selector(object):
         for c in command:
             fcntl.ioctl(fd, termios.TIOCSTI, c)
         termios.tcsetattr(fd, termios.TCSANOW, old)
-
-
-def main():
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-a', '--case-sensitive', action='store_true', default=True, help='start in case-sensitive mode')
-    parser.add_argument('-d', '--remove-duplicates', action='store_true', default=True, help='remove duplicated lines')
-    parser.add_argument('-y', '--show-matches', action='store_true', default=True, help='highlight the part of each line where there is a match')
-    parser.add_argument('infile', nargs='?', type=argparse.FileType('r'), default=sys.stdin, help='the file which lines you want to select eg. <(history)')
-
-    args = parser.parse_args()
-
-    Selector(
-        case_sensitive=args.case_sensitive,
-        remove_duplicates=args.remove_duplicates,
-        show_matches=args.show_matches,
-        infile=args.infile,
-        # TODO support missing options
-    )
-
-
-if __name__ == '__main__':
-    main()
 

@@ -1,9 +1,0 @@
-abc
-cba
-abcd
-dcba
-dabc
-a-----b---abc--
-a-----b---c----
-a-----b-----c--
-a-----b--c--abc

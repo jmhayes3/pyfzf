@@ -191,15 +191,7 @@ def fuzzymatch_v1(chars, pattern, case=True, normalize=True, with_pos=True, debu
     if debug:
         return score_matrix, max_score, match_positions
     elif with_pos:
-        return chars, max_score, match_positions
+        return max_score, match_positions
     else:
         return max_score
-
-
-def compute_scores(pattern, lines):
-    processed = []
-    for line in lines:
-        score, match_positions = fuzzymatch_v1(line, pattern)
-        processed.append((line, score, match_positions))
-    return processed
 
