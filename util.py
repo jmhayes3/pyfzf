@@ -55,7 +55,6 @@ def get_files_and_dirs(include_dirs=False, include_hidden=False, pipe=subprocess
     for line in out:
         line = line.replace("./", "", 1)
         lines.append(line)
-
     return lines
 
 
@@ -74,5 +73,4 @@ def get_lines(**kwargs):
     else:
         print("No PIPE or FILE REDIRECTION, walking cwd.")
         lines = get_files_and_dirs()
-
     return lines
