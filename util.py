@@ -29,16 +29,18 @@ def print_matrix(matrix):
 
 def get_files_and_dirs(include_dirs=False, include_hidden=False, pipe=subprocess.PIPE):
     # recursively get all files, ignoring hidden files (-not -path '*/\.*)
-    if include_dirs:
-        if include_hidden:
-            process = subprocess.Popen(["find", "."], stdout=pipe)
-        else:
-            process = subprocess.Popen(["find", ".",  "-not", "-path", "*/\.*"], stdout=pipe)
-    else:
-        if include_hidden:
-            process = subprocess.Popen(["find", ".", "-type", "f"], stdout=pipe)
-        else:
-            process = subprocess.Popen(["find", ".",  "-not", "-path", "*/\.*", "-type", "f"], stdout=pipe)
+    # if include_dirs:
+    #     if include_hidden:
+    #         process = subprocess.Popen(["find", "."], stdout=pipe)
+    #     else:
+    #         process = subprocess.Popen(["find", ".",  "-not", "-path", "*/\.*"], stdout=pipe)
+    # else:
+    #     if include_hidden:
+    #         process = subprocess.Popen(["find", ".", "-type", "f"], stdout=pipe)
+    #     else:
+    #         process = subprocess.Popen(["find", ".",  "-not", "-path", "*/\.*", "-type", "f"], stdout=pipe)
+
+    process = subprocess.Popen(["fd", "--type", "f"], stdout=pipe)
 
     # communicate method is blocking
     out, err = process.communicate()

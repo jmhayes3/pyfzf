@@ -104,7 +104,6 @@ class LineCountWidget(urwid.Text):
 
 class Selector(object):
     def __init__(self, algo, case_sensitive, show_matches, infile):
-
         self.algo = algo
         self.show_matches = show_matches
         self.case_modifier = case_sensitive
@@ -166,11 +165,12 @@ class Selector(object):
 
             # blocking but faster
             pipe = subprocess.PIPE
-            process = subprocess.Popen(
-                ["find", ".",  "-not", "-path", "*/\.*", "-type", "f"],
-                stdout=pipe,
-                stderr=subprocess.DEVNULL
-            )
+            # process = subprocess.Popen(
+            #     ["find", ".",  "-not", "-path", "*/\.*", "-type", "f"],
+            #     stdout=pipe,
+            #     stderr=subprocess.DEVNULL
+            # )
+            process = subprocess.Popen(["fd", "--type", "f"], stdout=pipe, stderr=subprocess.DEVNULL)
             stdout, stderr = process.communicate()
             self.update_lines(stdout)
 
@@ -223,7 +223,7 @@ class Selector(object):
                 score, match_positions = fuzzymatch_v1(line, search_text)
                 scored_lines.append((line, score, match_positions))
 
-            sorted_lines = sorted(scored_lines, key=lambda x: (x[1], len(x[0])), reverse=True)
+            sorted_lines = sorted(scored_lines, key=lambda x: (x[1], len(x[0])), reverse=False)
 
             items = []
             for item in sorted_lines:

@@ -185,9 +185,10 @@ def backtracker(chars, pattern, start_pos):
 # fuzzy_match makes two assumptions
 # 1. "pattern" is given in lowercase if "case_sensitive" is false
 # 2. "pattern" is already normalized if "normalize" is true
-def fuzzymatch_v1(chars, pattern, case=True, normalize=True, with_pos=True, debug=False):
+def fuzzymatch_v1(chars, pattern, case=False, normalize=True, with_pos=True, debug=False):
+    if not case:
+        chars = chars.lower()
     score_matrix, max_score, match_positions = get_score(chars, pattern)
-
     if debug:
         return score_matrix, max_score, match_positions
     elif with_pos:
