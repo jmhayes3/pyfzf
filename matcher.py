@@ -1,5 +1,4 @@
-from util import initialize_matrix
-
+#!/usr/bin/env python3
 
 SCORE_MATCH = 16
 SCORE_GAP_START = -3
@@ -56,7 +55,9 @@ def get_score(chars, pattern, backtrack=True):
     # +1 for gap row and gap column
     rows = c_length + 1
     cols = p_length + 1
-    score_matrix = initialize_matrix(rows, cols)
+
+    # initialize matrix
+    score_matrix = [[0 for col in range(cols)] for row in range(rows)]
 
     p_idx = 0
     in_gap = False
@@ -196,3 +197,10 @@ def fuzzymatch_v1(chars, pattern, case=False, normalize=True, with_pos=True, deb
     else:
         return max_score
 
+
+def main():
+    pass
+
+
+if __name__ == "__main__":
+    main()

@@ -9,9 +9,10 @@ def initialize_matrix(rows, cols):
 
 
 def print_matrix(matrix):
-    """Pretty print the scoring matrix.
+    """
+    Pretty print the scoring matrix.
 
-    ex:
+    Ex:
     0   0   0   0   0   0
     0   2   1   2   1   2
     0   1   1   1   1   1
