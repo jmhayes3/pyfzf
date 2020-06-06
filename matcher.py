@@ -1,10 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 SCORE_MATCH = 16
 SCORE_GAP_START = -3
 SCORE_GAP_EXTENSION = -1
-BONUS_BOUNDARY = SCORE_MATCH / 2
-BONUS_NON_ALNUM = SCORE_MATCH / 2
+BONUS_BOUNDARY = SCORE_MATCH // 2
+BONUS_NON_ALNUM = SCORE_MATCH // 2
 BONUS_CAMEL_123 = BONUS_BOUNDARY + SCORE_GAP_EXTENSION
 BONUS_CONSECUTIVE = -(SCORE_GAP_START + SCORE_GAP_EXTENSION)
 BONUS_FIRST_CHAR_MULTIPLIER = 2
@@ -127,7 +127,7 @@ def backtracker(chars, pattern, start_pos):
     # +1 for gap row and gap column
     rows = c_length + 1
     cols = p_length + 1
-    score_matrix = initialize_matrix(rows, cols)
+    score_matrix = [[0 for col in range(cols)] for row in range(rows)]
 
     in_gap = False
     consecutive = 0

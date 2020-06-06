@@ -68,7 +68,6 @@ def get_lines(**kwargs):
 
     Return list of lines given some delimiter. (only NEWLINE supported for now)
     """
-
     mode = os.fstat(sys.stdin.fileno()).st_mode
     if stat.S_ISFIFO(mode) or stat.S_ISREG(mode):
         print("PIPE or FILE REDIRECTION, processing input.")

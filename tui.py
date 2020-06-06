@@ -266,18 +266,14 @@ class Selector(object):
 
             self.inject_command(line)
             raise urwid.ExitMainLoop()
-
         elif input_ == 'tab':
             self.toggle_case_modifier()
-
         elif input_ == 'backspace':
             self.search_edit.set_edit_text(self.search_edit.get_text()[0][:-1])
             self.search_edit.set_edit_pos(len(self.search_edit.get_text()[0]))
             self.view.set_focus('footer')
-
         elif input_ == 'esc':
             raise urwid.ExitMainLoop()
-
         elif len(input_) == 1:  # ignore things like tab, enter
             self.search_edit.set_edit_text(self.search_edit.get_text()[0] + input_)
             self.search_edit.set_edit_pos(len(self.search_edit.get_text()[0]))
