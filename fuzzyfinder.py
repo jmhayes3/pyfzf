@@ -7,23 +7,96 @@ import subprocess
 import struct
 import fcntl
 import termios
+import string
+import cProfile
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.application.current import get_app
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
+from prompt_toolkit.lexers import Lexer
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.document import Document
 from prompt_toolkit.formatted_text import HTML
-from prompt_toolkit.layout.containers import Window, HSplit
+from prompt_toolkit.layout.containers import Window, HSplit, ScrollOffsets
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.layout import Layout
+from prompt_toolkit.layout.processors import Processor, Transformation
 from prompt_toolkit.layout.dimension import LayoutDimension as D
+from prompt_toolkit.layout.screen import Screen, Char, _CHAR_CACHE
+from prompt_toolkit.filters import Condition, has_focus
 from prompt_toolkit.styles import Style
+from prompt_toolkit.data_structures import Point
 
 from matcher import fuzzymatch_v1
+from processors import MatchProcessor
+from helpers import profile, timeit
 
 
-def walk_dir(command=None):
+def _highlight_cursorlines(
+        self, new_screen: Screen, cpos: Point, x: int, y: int, width: int, height: int
+    ) -> None:
+        """
+        Highlight cursor row/column.
+        """
+        cursor_line_style = " bold "
+        cursor_column_style = " class:cursor-column "
+
+        data_buffer = new_screen.data_buffer
+
+        # Highlight cursor line.
+        if self.cursorline():
+            row = data_buffer[cpos.y]
+            for x in range(x, x + width):
+                original_char = row[x]
+                row[x] = _CHAR_CACHE[
+                    original_char.char, cursor_line_style
+                ]
+
+        # Highlight cursor column.
+        if self.cursorcolumn():
+            for y2 in range(y, y + height):
+                row = data_buffer[y2]
+                original_char = row[cpos.x]
+                row[cpos.x] = _CHAR_CACHE[
+                    original_char.char, original_char.style + cursor_column_style
+                ]
+
+        # Highlight color columns
+        colorcolumns = self.colorcolumns
+        if callable(colorcolumns):
+            colorcolumns = colorcolumns()
+
+        for cc in colorcolumns:
+            assert isinstance(cc, ColorColumn)
+            column = cc.position
+
+            if column < x + width:  # Only draw when visible.
+                color_column_style = " " + cc.style
+
+                for y2 in range(y, y + height):
+                    row = data_buffer[y2]
+                    original_char = row[column + x]
+                    row[column + x] = _CHAR_CACHE[
+                        original_char.char, original_char.style + color_column_style
+                    ]
+
+Window._highlight_cursorlines = _highlight_cursorlines
+
+class MatchedLine:
+
+    def __init__(self, line, score, match_positions):
+        self.line = line
+        self.score = score
+        self.match_positions = match_positions
+
+
+def run_command(command=None):
+    """
+    Run the given command in a subprocess and return the output delimited by
+    line as a list of strings.
+    """
+    # command = command or ["fd", "--type", "f"]
     command = command or ["fd", "--type", "f", "--hidden"]
     process = subprocess.Popen(
         command,
@@ -31,28 +104,29 @@ def walk_dir(command=None):
         stderr=subprocess.DEVNULL
     )
     stdout, stderr = process.communicate()
-    lines = stdout.decode("UTF-8").split("\n")
-
-    # Remove trailing newline.
-    lines = lines[0:-1]
+    lines = stdout.decode("UTF-8").splitlines()
     return lines
 
 
-def load_data():
+def load_lines():
     """
     Read from stdin if input is from a pipe or file redirection.
-    Otherwise, walk current working directory.
+    Otherwise, run shell command to get input.
     """
     mode = os.fstat(sys.stdin.fileno()).st_mode
     if stat.S_ISFIFO(mode) or stat.S_ISREG(mode):
-        lines = sys.stdin.readlines()
+        lines = sys.stdin.read().splitlines()
+        sys.stdin = sys.stdout
     else:
-        lines = walk_dir()
+        lines = run_command()
     return lines
 
 
-def inject_command(command):
-    command = (struct.pack('B', c) for c in os.fsencode(command))
+def inject_line(line):
+    """
+    Copy the given line to the terminal.
+    """
+    line = (struct.pack('B', c) for c in os.fsencode(line))
 
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
@@ -62,30 +136,30 @@ def inject_command(command):
     new[3] = new[3] & ~termios.ECHO
 
     termios.tcsetattr(fd, termios.TCSANOW, new)
-    for c in command:
+    for c in line:
         fcntl.ioctl(fd, termios.TIOCSTI, c)
+
     termios.tcsetattr(fd, termios.TCSANOW, old)
 
 
 class ResultBuffer:
 
-    def __init__(self, sort=True, multi=False):
+    def __init__(self, matcher=None, sort=True, multi=True, reverse=False):
         self.sort = sort
         self.multi = multi
+        self.reverse = reverse
 
         self.lines = []
 
-        # Lines matching the search pattern (score > 0) to show in buffer.
         self.relevant_lines = []
 
-        self.selected_lines = []
+        self.selected_lines = set()
 
         self.buffer = Buffer(
             multiline=True,
             read_only=True,
             document=Document("", 0),
-            accept_handler=self._accept_handler,
-        ) 
+        )
 
     @property
     def text(self):
@@ -95,19 +169,16 @@ class ResultBuffer:
     def document(self):
         return self.buffer.document
 
-    def _accept_handler(self, buffer):
-        if multi:
-            line = " ".join(self.selected_lines)
-        else:
-            line = self.document.current_line
-        inject_command(line)
-
     def set_lines(self, lines):
         self.lines = lines
         self.reset()
 
     def set_text(self, text):
-        document = Document(text, len(text))
+        if self.reverse:
+            cur_pos = 0
+        else:
+            cur_pos = len(text)
+        document = Document(text, cur_pos)
         self.buffer.set_document(document, bypass_readonly=True)
 
     def reset(self):
@@ -120,18 +191,18 @@ class ResultBuffer:
             for index, line in enumerate(self.lines):
                 score, match_positions = fuzzymatch_v1(line, pattern)
                 if score > 0:
-                    self.relevant_lines.append((line, score, match_positions))
-            self.relevant_lines = sorted(
-                self.relevant_lines,
-                key=lambda x: (x[1], len(x[0])),
-                reverse=False
-            )
-            rl_list = []
-            for rl in self.relevant_lines:
-                line, score, match_positions = rl
-                rl_str = line + " - " + str(score) + " -  [" + " ,".join(str(i) for i in match_positions) + "]"
-                rl_list.append(rl_str)
-            text = "\n".join(rl_list)
+                    self.relevant_lines.append(
+                        MatchedLine(line, score, match_positions)
+                    )
+            if self.sort:
+                # Sort by score, then line length.
+                self.relevant_lines = sorted(
+                    self.relevant_lines,
+                    key=lambda line: (line.score, len(line.line)),
+                    reverse=False
+                )
+            lines = [line.line for line in self.relevant_lines]
+            text = "\n".join(lines)
             self.set_text(text)
         else:
             self.reset()
@@ -147,33 +218,56 @@ class PromptBuffer:
             read_only=False,
             accept_handler=self._accept_handler,
             on_text_changed=self._on_text_changed,
+            on_cursor_position_changed=self._on_cursor_position_changed
         )
 
     def _accept_handler(self, buffer):
+        app = get_app()
         if self.result_buffer.multi:
             line = " ".join(self.result_buffer.selected_lines)
         else:
             line = self.result_buffer.document.current_line
-        inject_command(line)
-        get_app().exit()
+        inject_line(line)
+        app.exit()
 
     def _on_text_changed(self, buffer):
         self.result_buffer.search(buffer.text)
 
+    def _on_cursor_position_changed(self, buffer):
+        pass
+
 
 class FuzzyFinder:
 
-    def __init__(self):
-        self.result_buffer = ResultBuffer(sort=True)
+    def __init__(self, lines, sort=True, multi=True, reverse=False, **kwargs):
+        self.lines = lines
+        self.multi = multi
+        self.sort = sort
+        self.reverse = reverse
+        self.height = None
+
+        if "height" in kwargs.keys():
+            self.height = kwargs.get("height")
+
+        self.result_buffer = ResultBuffer(
+            sort=self.sort,
+            multi=self.multi,
+            reverse=self.reverse
+        )
+        self.result_buffer.set_lines(self.lines)
+
         self.prompt_buffer = PromptBuffer(self.result_buffer)
 
-        self.layout = self._create_layout(reverse=False)
+        self.layout = self._create_layout(reverse=self.reverse)
         self.key_bindings = self._create_key_bindings()
-        self.style = self._create_style()
         self.application = self._create_application()
 
     def _create_key_bindings(self):
         key_bindings = KeyBindings()
+
+        @Condition
+        def is_multi():
+            return self.result_buffer.multi
 
         @key_bindings.add("escape")
         @key_bindings.add("c-c")
@@ -181,94 +275,100 @@ class FuzzyFinder:
         def exit_(event):
             event.app.exit()
 
-        @key_bindings.add("up")
-        @key_bindings.add("c-p")
+        @key_bindings.add("up", eager=True)
+        @key_bindings.add("c-p", eager=True)
         def cursor_up_(event):
             self.result_buffer.buffer.cursor_up()
 
-        @key_bindings.add("down")
-        @key_bindings.add("c-n")
+        @key_bindings.add("down", eager=True)
+        @key_bindings.add("c-n", eager=True)
         def cursor_down_(event):
             self.result_buffer.buffer.cursor_down()
 
-        @key_bindings.add("tab")
+        @key_bindings.add("tab", filter=is_multi)
         def select_(event):
-            self.result_buffer.selected_lines.append(
+            self.result_buffer.selected_lines.add(
                 self.result_buffer.document.current_line
             )
 
-        @key_bindings.add("s-tab")
+        @key_bindings.add("s-tab", filter=is_multi)
         def unselect_(event):
             self.result_buffer.selected_lines.remove(
                 self.result_buffer.document.current_line
             )
 
-        return key_bindings
+        # @key_bindings.add(Keys.ScrollUp)
+        # def su_(event):
+        #     self.result_buffer.buffer.cursor_up()
 
-    def _create_style(self):
-        style = Style.from_dict(
-            {
-                "result": "bg:#000044 #ffffff",
-                "status": "reverse",
-                "status.position": "#aaaa00",
-                "status.key": "#ffaa00",
-                "prompt": "bg:#000000 #ffffff",
-            }
-        )
-        return style
+        # @key_bindings.add(Keys.ScrollDown)
+        # def sd_(event):
+        #     self.result_buffer.buffer.cursor_down()
+
+        @key_bindings.add(Keys.Vt100MouseEvent)
+        def mouse_event_(event):
+            mouse_event = event.key_sequence[0].data
+            if "[<0;" in mouse_event:
+                # click
+                # get_app().layout.focus_last()
+                pass
+            elif "[<64;" in mouse_event:
+                # scroll up
+                self.result_buffer.buffer.cursor_up()
+            elif "[<65;" in mouse_event:
+                # scroll down
+                self.result_buffer.buffer.cursor_down()
+
+        return key_bindings
 
     def _create_layout(self, reverse=False):
         def get_line_prefix(lineno, wrap_count):
+            prefix = " "
+            # if lineno is self.result_buffer.document.cursor_position_row:
+            #     prefix = "<ansired>&gt;</ansired>"
             line = self.result_buffer.document.lines[lineno]
-            if line in self.result_buffer.selected_lines: 
-                return HTML("<style bg='ansired' fg='black'> </style>&gt;")
-            else:
-                return HTML("<style bg='ansired' fg='black'> </style> ")
+            selected = " "
+            if line in self.result_buffer.selected_lines:
+                selected = "<b><ansired>&gt;</ansired></b>"
+            return HTML(prefix + selected)
 
         result_container = Window(
             BufferControl(
                 buffer=self.result_buffer.buffer,
-                focusable=True,
+                focusable=False,
                 focus_on_click=True,
+                input_processors=[
+                    MatchProcessor(self.result_buffer),
+                ],
             ),
+            height=D(min=1, max=self.height),
+            dont_extend_height=False,
             wrap_lines=False,
+            always_hide_cursor=True,
             cursorline=True,
-            always_hide_cursor=False,
-            style="class:result",
             get_line_prefix=get_line_prefix,
         )
 
         def get_statusbar_text():
-            return [
-                ("class:status", __file__ + " - "),
-                (
-                    "class:status.position",
-                    "{}:{}".format(
-                        self.result_buffer.document.cursor_position_row + 1,
-                        self.result_buffer.document.cursor_position_col + 1,
-                    ),
-                ),
-                ("class:status", " - "),
-                (
-                    "class:status.position",
-                    "{}/{}".format(
+            if len(self.result_buffer.selected_lines) > 0:
+                return HTML("  <ansiyellow>{}/{} ({})</ansiyellow>".format(
                         len(self.result_buffer.relevant_lines),
                         len(self.result_buffer.lines),
-                    ),
-                ),
-                ("class:status", " - Press "),
-                ("class:status.key", "Ctrl-C"),
-                ("class:status", " to exit, "),
-                ("class:status.key", "/"),
-                ("class:status", " for searching."),
-            ]
+                        len(self.result_buffer.selected_lines)
+                    )
+                )
+            else:
+                return HTML("  <ansiyellow>{}/{}</ansiyellow>".format(
+                        len(self.result_buffer.relevant_lines),
+                        len(self.result_buffer.lines)
+                    )
+                )
 
         status_container = Window(
             content=FormattedTextControl(get_statusbar_text),
             height=D.exact(1),
             dont_extend_height=True,
             wrap_lines=False,
-            style="class:status",
         )
 
         prompt_container = Window(
@@ -276,11 +376,12 @@ class FuzzyFinder:
                 buffer=self.prompt_buffer.buffer,
                 focusable=True,
                 focus_on_click=True,
+                include_default_input_processors=False,
             ),
-            height=1,
+            height=D.exact(1),
             dont_extend_height=True,
             wrap_lines=False,
-            style="class:prompt",
+            get_line_prefix=lambda lineno, wrap_count: HTML("<b>> </b>"),
         )
 
         if reverse:
@@ -302,24 +403,27 @@ class FuzzyFinder:
         application = Application(
             layout=self.layout,
             key_bindings=self.key_bindings,
-            style=self.style,
             mouse_support=True,
-            full_screen=True,
+            full_screen=False,
             enable_page_navigation_bindings=False,
+            max_render_postpone_time=0
         )
         return application
 
-    def _pre_run(self):
-        lines = load_data()
-        self.result_buffer.set_lines(lines)
-
     def run(self):
-        """Start the event loop."""
-        self.application.run(pre_run=self._pre_run)
+        self.application.run()
 
 
+@profile()
 def main():
-    FuzzyFinder().run()
+    lines = load_lines()
+    ff = FuzzyFinder(
+        sort=False,
+        multi=True,
+        reverse=True,
+        lines=lines
+    )
+    ff.run()
 
 
 if __name__ == "__main__":

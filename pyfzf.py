@@ -12,7 +12,7 @@ from tui import Selector
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-a", "--algo", action="store_true", default="v1", help="Algorithm to use for matching.")
-    parser.add_argument("-s", "--show", action="store_true", default=True, help="Indicate characters that have a match.")
+    parser.add_argument("-s", "--show", action="store_true", default=True, help="Highlight matching character positions.")
     parser.add_argument("-i", "--ignore-case", action="store_true", default=False, help="Perform case-insensitive matching.")
     parser.add_argument("infile", nargs="?", type=argparse.FileType("r"), default=sys.stdin, help="Input file.")
 

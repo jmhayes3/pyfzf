@@ -1,4 +1,7 @@
-#!/usr/bin/env python
+import itertools
+import numpy as np
+
+from functools import lru_cache
 
 SCORE_MATCH = 16
 SCORE_GAP_START = -3
@@ -15,7 +18,7 @@ NUMBER = 3
 NON_ALNUM = 4
 
 
-# charClassOf implementation
+@lru_cache(maxsize=128)
 def get_char_type(char):
     if char.isalnum():
         if char.islower():
@@ -28,7 +31,7 @@ def get_char_type(char):
         return NON_ALNUM
 
 
-# bonusFor implementation
+@lru_cache(maxsize=128)
 def calc_bonus(prev, curr):
     if prev is NON_ALNUM and curr is not NON_ALNUM:
         return BONUS_BOUNDARY
@@ -40,11 +43,6 @@ def calc_bonus(prev, curr):
         return BONUS_NON_ALNUM
     else:
         return 0
-
-
-def normalize(chars):
-    """Normalize latin script letters."""
-    pass
 
 
 # if backtrack is False, don't traverse backwards to find shorter match
@@ -69,7 +67,7 @@ def get_score(chars, pattern, backtrack=True):
     max_score = 0
     max_score_pos = (0, 0)
     match_positions = []
-    for c_idx in range(0, c_length):
+    for c_idx in range(c_length):
         if consecutive > 0:
             p_idx += 1
         if p_idx < p_length:
@@ -115,12 +113,12 @@ def get_score(chars, pattern, backtrack=True):
     if p_length >= p_idx + 1:
         return score_matrix, 0, []
     elif backtrack:
-        return backtracker(chars, pattern, max_score_pos)
+        return traceback(chars, pattern, max_score_pos)
     else:
         return score_matrix, max_score, match_positions
 
 
-def backtracker(chars, pattern, start_pos):
+def traceback(chars, pattern, start_pos):
     c_length = len(chars)
     p_length = len(pattern)
 
@@ -183,12 +181,9 @@ def backtracker(chars, pattern, start_pos):
     return score_matrix, max_score, match_positions
 
 
-# fuzzy_match makes two assumptions
-# 1. "pattern" is given in lowercase if "case_sensitive" is false
-# 2. "pattern" is already normalized if "normalize" is true
-def fuzzymatch_v1(chars, pattern, case=False, normalize=True, with_pos=True, debug=False):
+def fuzzymatch_v1(chars, pattern, case=True, with_pos=True, debug=False):
     if not case:
-        chars = chars.lower()
+        pattern = pattern.lower()
     score_matrix, max_score, match_positions = get_score(chars, pattern)
     if debug:
         return score_matrix, max_score, match_positions
@@ -198,9 +193,65 @@ def fuzzymatch_v1(chars, pattern, case=False, normalize=True, with_pos=True, deb
         return max_score
 
 
-def main():
-    pass
+class SmithWaterson:
+
+    def __init__(self):
+        pass
+
+    def matrix(self, a, b, match_score=3, gap_cost=2):
+        H = np.zeros((len(a) + 1, len(b) + 1), np.int)
+
+        for i, j in itertools.product(range(1, H.shape[0]), range(1, H.shape[1])):
+            match = H[i - 1, j - 1] + (match_score if a[i - 1] == b[j - 1] else - match_score)
+            delete = H[i - 1, j] - gap_cost
+            insert = H[i, j - 1] - gap_cost
+            H[i, j] = max(match, delete, insert, 0)
+
+        return H
+
+    def traceback(self, H, b, b_='', old_i=0):
+        # flip H to get index of **last** occurrence of H.max() with np.argmax()
+        H_flip = np.flip(np.flip(H, 0), 1)
+        i_, j_ = np.unravel_index(H_flip.argmax(), H_flip.shape)
+        i, j = np.subtract(H.shape, (i_ + 1, j_ + 1))  # (i, j) are **last** indexes of H.max()
+        if H[i, j] == 0:
+            return b_, j
+        b_ = b[j - 1] + '-' + b_ if old_i - i > 1 else b[j - 1] + b_
+        return self.traceback(H[0:i, 0:j], b, b_, i)
+
+    def search(self, chars, pattern, match_score=3, gap_cost=2):
+        chars, pattern = chars.upper(), pattern.upper()
+        H = self.matrix(chars, pattern, match_score, gap_cost)
+        pattern_, pos = self.traceback(H, pattern)
+        return chars[pos:pos + len(pattern_)]
 
 
-if __name__ == "__main__":
-    main()
+class FuzzyMatchV1:
+
+    def __init__(self):
+        pass
+
+    def search(self, chars, pattern):
+        pass
+
+
+class FuzzyMatchV2:
+
+    def __init__(self):
+        pass
+
+    def search(self, chars, pattern):
+        pass
+
+
+class ExactNaiveMatch:
+
+    def __init__(self):
+        pass
+
+    def search(self, chars, pattern):
+        pass
+
+
+sw = SmithWaterson()
+print(sw.search("ggttgacta", "tgttacgg"))

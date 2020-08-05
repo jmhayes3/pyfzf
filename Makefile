@@ -5,4 +5,4 @@ clean:
 	find . -name 'debug.log' -exec rm -f {} +
 
 run:
-	python pyfzf.py
+	python fuzzyfinder.py

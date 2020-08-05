@@ -1,7 +1,12 @@
 * implement cache for storing input string and pattern combinations
-* add tests
+* handle result buffer focus by processing "Keys.Any" key binding and check for WORD_CHARACTERS
+  # Hide message when a key is pressed.
+        def key_pressed(_):
+            self.message = None
+        self.application.key_processor.before_key_press += key_pressed
 
 * implement highlighting of match positions
+
   class ReportingProcessor(Processor):
       """
       Highlight all pyflakes errors on the input.
@@ -21,3 +26,7 @@
                               fragments[i] = ('class:flakeserror', fragments[i][1])
 
           return Transformation(fragments)
+
+* fix not scrolling to top/bottom on scroll event when top/bottom content is visible in buffer
+  ScrollOffsets()
+* add tests
