@@ -1,3 +1,3 @@
-# pyfzf (peach? peachy? pypeach? peachpy?)
+# pzf
 
-Python implementation of fzf, a command-line fuzzy-finder.
+pzf is a cli fuzzy-finder similar to, and inspired by, fzf
