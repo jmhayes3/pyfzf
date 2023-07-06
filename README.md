@@ -1,3 +1,3 @@
 # pzf
 
-pzf is a cli fuzzy-finder similar to, and inspired by, fzf
+Python implementation of fzf, a command-line fuzzy finder.
