@@ -5,7 +5,6 @@ import cProfile
 import pstats
 
 from functools import wraps
-from contextlib import ContextDecorator
 
 
 @contextlib.contextmanager

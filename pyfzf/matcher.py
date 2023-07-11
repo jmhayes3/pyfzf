@@ -1,5 +1,4 @@
 import itertools
-
 import numpy as np
 
 
@@ -28,8 +27,14 @@ def calc_bonus(prev, curr):
 
 class FuzzyMatch:
 
-    def process(self, chars, pattern):
-        matrix = np.zeros((len(chars) + 1, len(pattern) + 1), np.int)
+    def __init__(self, pattern=[], text=[]) -> None:
+        self.pattern = pattern
+        self.text = text
+        self.matrix = np.zeros((len(text) + 1, len(pattern) + 1), int)
+
+
+    def process(self, text, pattern):
+        matrix = np.zeros((len(text) + 1, len(pattern) + 1), int)
         rows = matrix.shape[0]
         cols = matrix.shape[1]
 
@@ -37,22 +42,24 @@ class FuzzyMatch:
         consecutive = 0
 
         for i, j in itertools.product(range(1, rows), range(1, cols)):
+        # for i in range(rows):
+        #     for j in range(cols):
             score = 0
 
-            if chars[i - 1] == pattern[j - 1]:
+            if text[i - 1] == pattern[j - 1]:
                 score += SCORE_MATCH
 
                 if i > 1:
-                    bonus = calc_bonus(chars[i - 2], chars[i - 1])
+                    bonus = calc_bonus(text[i - 2], text[i - 1])
                 else:
-                    bonus = calc_bonus(None, chars[i - 1])
+                    bonus = calc_bonus(None, text[i - 1])
 
                 if bonus == BONUS_BOUNDARY:
                     consecutive = 1
                 elif consecutive > 1:
                     bonus += consecutive
 
-                if chars[i - 1] == pattern[0]:
+                if text[i - 1] == pattern[0]:
                     bonus *= BONUS_FIRST_CHAR_MULTIPLIER
 
                 score += bonus
@@ -88,31 +95,3 @@ class FuzzyMatch:
             matrix = matrix[0:row_, 0:col_]
 
         return max_score, match_indices
-
-
-def main():
-    matcher = FuzzyMatch()
-    combos = [
-        ("atttbttta", "a"),
-        ("atttbttta", "aa"),
-        ("atttbttta", "at"),
-        ("atttbttta", "t"),
-        ("atttbttta", "ta"),
-        ("atttbttta", "tt"),
-        ("atttbtttc", "a"),
-        ("atttbtttc", "b"),
-        ("atttbtttc", "c"),
-        ("atttbtttc", "ab"),
-        ("atttbtttc", "bc"),
-        ("atttbtttc", "ac"),
-        ("atttbtttc", "abc"),
-        ("atttbtttc", "cba"),
-        ("atttbtttc", "bca"),
-    ]
-    for c, p in combos:
-        m = matcher.process(c, p)
-        print(p, m, c)
-
-
-if __name__ == "__main__":
-    main()

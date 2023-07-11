@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import os
 import sys
 import stat
@@ -7,7 +5,6 @@ import subprocess
 import struct
 import fcntl
 import termios
-import cProfile
 
 from prompt_toolkit import print_formatted_text
 from prompt_toolkit.application import Application
@@ -271,7 +268,7 @@ class Finder:
 # @profile()
 def main():
     lines = load_initial_input()
-    matcher = FuzzyMatch(with_pos=True)
+    matcher = FuzzyMatch()
     Finder(matcher, lines).run()
 
 

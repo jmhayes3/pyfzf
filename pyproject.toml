@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "pyfzf"
+version = "0.1.0"
+description = "Command-line fuzzy finder."
+authors = ["jmhayes3 <22490346+jmhayes3@users.noreply.github.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+prompt-toolkit = "^3.0.39"
+numpy = "^1.25.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+black = "^23.7.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
